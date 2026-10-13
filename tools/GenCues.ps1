@@ -2,8 +2,9 @@
 # - 入场提示：正弦 100ms，freq = 1000 - row*500/height，右声道；
 # - 快速僵尸：锯齿 3x50ms（0/100/200ms 起始），同一频率，右声道。
 # - 巨人举锤：锯齿 2x50ms（0/100ms 起始），同一行频率，双声道居中音源。
+# - 跨行浏览：三角波 100ms，同一行频率，双声道居中音源，运行时按最左僵尸定位。
 # 输出 22050Hz 16bit 立体声 PCM wav；入场/快速僵尸左声道静音，
-# 举锤音由播放时的 pan 按巨人横向位置定位。
+# 举锤和跨行音由播放时的 pan 按僵尸横向位置定位。
 param([string]$OutDir = "$PSScriptRoot\..\sounds")
 
 $rate = 22050
@@ -11,9 +12,9 @@ $amp = 0.8
 $fadeMs = 3.0
 
 function Write-CueWav([string]$Path, [double]$Freq, [string]$Kind) {
-    $beepMs = if ($Kind -eq "entry") { 100.0 } else { 50.0 }
-    $totalMs = if ($Kind -eq "entry") { 100.0 } elseif ($Kind -eq "hammer") { 150.0 } else { 250.0 }
-    $starts = if ($Kind -eq "entry") { @(0.0) } elseif ($Kind -eq "hammer") { @(0.0, 100.0) } else { @(0.0, 100.0, 200.0) }
+    $beepMs = if ($Kind -in @("entry", "row")) { 100.0 } else { 50.0 }
+    $totalMs = if ($Kind -in @("entry", "row")) { 100.0 } elseif ($Kind -eq "hammer") { 150.0 } else { 250.0 }
+    $starts = if ($Kind -in @("entry", "row")) { @(0.0) } elseif ($Kind -eq "hammer") { @(0.0, 100.0) } else { @(0.0, 100.0, 200.0) }
     $total = [int]($rate * $totalMs / 1000)
     $samples = New-Object 'double[]' $total
     $fade = [int]($rate * $fadeMs / 1000)
@@ -24,6 +25,9 @@ function Write-CueWav([string]$Path, [double]$Freq, [string]$Kind) {
             $t = $i / $rate
             $v = if ($Kind -eq "entry") {
                 [Math]::Sin(2 * [Math]::PI * $Freq * $t)
+            } elseif ($Kind -eq "row") {
+                $phase = ($Freq * $t) % 1.0
+                1.0 - 4.0 * [Math]::Abs($phase - 0.5)
             } else {
                 $phase = ($Freq * $t) % 1.0
                 2.0 * $phase - 1.0
@@ -46,7 +50,7 @@ function Write-CueWav([string]$Path, [double]$Freq, [string]$Kind) {
     $bw.Write([int]$dataSize)
     foreach ($s in $samples) {
         $v = [int16]([Math]::Max(-1.0, [Math]::Min(1.0, $s)) * 32767)
-        if ($Kind -eq "hammer") { $bw.Write($v) } else { $bw.Write([int16]0) }
+        if ($Kind -in @("hammer", "row")) { $bw.Write($v) } else { $bw.Write([int16]0) }
         $bw.Write($v)
     }
     $bw.Close(); $fs.Close()
@@ -58,6 +62,7 @@ foreach ($height in @(5, 6)) {
         Write-CueWav (Join-Path $OutDir ("entry_h{0}_r{1}.wav" -f $height, $row)) $freq "entry"
         Write-CueWav (Join-Path $OutDir ("fast_h{0}_r{1}.wav" -f $height, $row)) $freq "fast"
         Write-CueWav (Join-Path $OutDir ("hammer_h{0}_r{1}.wav" -f $height, $row)) $freq "hammer"
+        Write-CueWav (Join-Path $OutDir ("row_h{0}_r{1}.wav" -f $height, $row)) $freq "row"
     }
 }
 

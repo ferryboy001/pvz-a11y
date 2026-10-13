@@ -48,6 +48,7 @@ struct PanelHost {
     TaoPluginUiControlsV1 controls{};
     bool open = false;
     std::string focused;
+    std::string eventKey = "trace_log";
     std::map<std::string, std::string> texts;
     std::vector<std::pair<std::string, std::string>> events;
     size_t eventIndex = 0;
@@ -77,7 +78,7 @@ struct PanelHost {
             auto& s = *static_cast<PanelHost*>(ctx);
             if (s.eventIndex < s.events.size()) {
                 const auto& event = s.events[s.eventIndex++]; out->event.available = 1;
-                out->event.key = tao::AbiString("trace_log"); out->event.name = tao::AbiString(event.first);
+                out->event.key = tao::AbiString(s.eventKey); out->event.name = tao::AbiString(event.first);
                 out->text = tao::AbiString(event.second);
             }
             return TAO_PLUGIN_OK;
@@ -165,9 +166,101 @@ int main() {
         panel2.Queue(Action::Confirm); panel2.Pump();
         require(!countdownState && countdownSets == 1 && panelHost.texts["wave_countdown"].starts_with("0\t"), "Confirm toggles wave_countdown off");
         panel2.Queue(Action::Option); panel2.Pump();
+        require(panelHost.focused == "hammer_volume", "Tab reaches hammer volume");
+        panel2.Queue(Action::Option); panel2.Pump();
+        require(panelHost.focused == "wave_countdown_volume", "Tab reaches countdown volume");
+        panel2.Queue(Action::Option); panel2.Pump();
+        require(panelHost.focused == "zombie_entry_volume", "Tab reaches entry volume");
+        panel2.Queue(Action::Option); panel2.Pump();
+        require(panelHost.focused == "row_zombie_speech", "Tab reaches row speech mode");
+        panel2.Queue(Action::Option); panel2.Pump();
+        require(panelHost.focused == "row_zombie_cue", "Tab reaches row sound switch");
+        panel2.Queue(Action::Option); panel2.Pump();
+        require(panelHost.focused == "row_zombie_volume", "Tab reaches row sound volume");
+        panel2.Queue(Action::Option); panel2.Pump();
         require(panelHost.focused == "close", "Tab reaches close button");
         panel2.Queue(Action::Confirm); panel2.Pump();
         require(!panel2.Active() && closes2 == 1, "Confirm on close button closes panel");
+
+        using Kind = LoggingPanel::VolumeKind;
+        int volumes[] = {75, 40, 60, 80};
+        int volumeSaves = 0, volumeCloses = 0;
+        bool saveFails = false;
+        std::vector<std::pair<Kind, int>> previews;
+        LoggingPanel volumePanel;
+        int rowMode = 1, rowModeSaves = 0, rowSoundSaves = 0;
+        bool rowSound = true;
+        volumePanel.ConnectRowBrowse([&] { return rowMode; }, [&](int mode) { rowMode = mode; ++rowModeSaves; return true; },
+            [&] { return rowSound; }, [&](bool value) { rowSound = value; ++rowSoundSaves; return true; });
+        volumePanel.Connect(controller, editable, [&](std::string text) { spoken.push_back(std::move(text)); },
+            [&] { ++volumeCloses; }, nullptr, nullptr,
+            [&](Kind kind) { return volumes[int(kind)]; },
+            [&](Kind kind, int value) { volumes[int(kind)] = value; ++volumeSaves; return !saveFails; },
+            [&](Kind kind) { previews.push_back({kind, volumes[int(kind)]}); });
+        volumePanel.RequestOpen(); volumePanel.Pump();
+        require(panelHost.texts["hammer_volume"].ends_with("75%") && panelHost.texts["wave_countdown_volume"].ends_with("40%") &&
+            panelHost.texts["zombie_entry_volume"].ends_with("60%"), "opening presents independently persisted volumes");
+        require(volumeSaves == 0 && previews.empty(), "opening must not save or preview");
+        for (int i = 0; i < 3; ++i) { volumePanel.Queue(Action::Option); volumePanel.Pump(); }
+        volumePanel.Queue(Action::Left); volumePanel.Pump();
+        require(volumes[0] == 70 && volumeSaves == 1 && previews.back() == std::pair(Kind::Hammer, 70), "left saves new hammer volume before preview");
+        require(panelHost.focused == "hammer_volume" && panelHost.texts["hammer_volume"].ends_with("70%"), "adjustment retains focus and updates percentage");
+        require(volumes[1] == 40 && volumes[2] == 60, "hammer adjustment preserves other volumes");
+        volumePanel.Queue(Action::Right); volumePanel.Pump();
+        require(volumes[0] == 75 && previews.back().second == 75, "right increases by five percent");
+        const auto previewCount = previews.size(); const int savedCount = volumeSaves;
+        volumePanel.Queue(Action::Confirm); volumePanel.Pump();
+        require(previews.size() == previewCount + 1 && volumeSaves == savedCount, "Confirm replays at current level without saving");
+        volumePanel.Queue(Action::Down); volumePanel.Pump();
+        require(panelHost.focused == "wave_countdown_volume", "down navigates to countdown");
+        volumePanel.Queue(Action::Right); volumePanel.Pump();
+        require(volumes[1] == 45 && previews.back() == std::pair(Kind::WaveCountdown, 45), "countdown adjustment previews its own new level");
+        volumePanel.Queue(Action::Option); volumePanel.Pump();
+        volumePanel.Queue(Action::Left); volumePanel.Pump();
+        require(volumes[2] == 55 && previews.back() == std::pair(Kind::ZombieEntry, 55), "entry adjustment previews its own new level");
+        panelHost.eventKey = "hammer_volume_minus"; panelHost.eventIndex = 0;
+        panelHost.events = {{"click", ""}}; controller.Pump(); volumePanel.Pump();
+        require(volumes[0] == 70 && panelHost.focused == "hammer_volume" && previews.back() == std::pair(Kind::Hammer, 70), "mouse minus adjusts and selects matching volume");
+        panelHost.eventKey = "zombie_entry_volume_plus"; panelHost.eventIndex = 0;
+        panelHost.events = {{"click", ""}}; controller.Pump(); volumePanel.Pump();
+        require(volumes[2] == 60 && previews.back() == std::pair(Kind::ZombieEntry, 60), "mouse plus adjusts entry");
+        volumes[2] = 0;
+        const auto beforeBoundary = previews.size(); const int savesAtBoundary = volumeSaves;
+        volumePanel.Queue(Action::Left); volumePanel.Pump();
+        require(volumes[2] == 0 && previews.size() == beforeBoundary && volumeSaves == savesAtBoundary, "lower bound avoids duplicate save and preview");
+        volumePanel.Queue(Action::Right); volumePanel.Pump();
+        require(volumes[2] == 5 && previews.back().second == 5, "raising muted volume previews new audible level");
+        volumes[2] = 100;
+        volumePanel.Queue(Action::Right); volumePanel.Pump(); require(volumes[2] == 100, "upper bound is one hundred percent");
+        saveFails = true; const auto spokenBeforeFailure = spoken.size();
+        volumePanel.Queue(Action::Left); volumePanel.Pump();
+        require(volumes[2] == 95 && previews.back().second == 95, "failed persistence keeps live adjustment and preview");
+        require(spoken[spokenBeforeFailure].find("保存失败") != std::string::npos, "failed persistence is announced");
+        volumePanel.Queue(Action::Option, -1); volumePanel.Pump();
+        require(panelHost.focused == "wave_countdown_volume", "Shift Tab navigates backwards from volume");
+        volumePanel.Queue(Action::Start); volumePanel.Pump(); require(volumeCloses == 1, "volume panel closes with original callback");
+        volumePanel.RequestOpen(); volumePanel.Pump();
+        require(panelHost.texts["hammer_volume"].ends_with("70%") && panelHost.texts["wave_countdown_volume"].ends_with("45%") &&
+            panelHost.texts["zombie_entry_volume"].ends_with("95%"), "reopening reflects updated live values");
+        volumePanel.Queue(Action::Start); volumePanel.Pump();
+
+        volumePanel.RequestOpen(); volumePanel.Pump();
+        for (int i = 0; i < 6; ++i) { volumePanel.Queue(Action::Option); volumePanel.Pump(); }
+        require(panelHost.focused == "row_zombie_speech" && panelHost.texts["row_zombie_speech"].ends_with("只朗读数量"), "row speech opens with saved count mode");
+        volumePanel.Queue(Action::Confirm); volumePanel.Pump();
+        require(rowMode == 2 && rowModeSaves == 1 && panelHost.texts["row_zombie_speech"].ends_with("朗读数量和坐标"), "Confirm cycles to Shift equivalent mode");
+        volumePanel.Queue(Action::Right); volumePanel.Pump(); require(rowMode == 0, "speech selector includes off");
+        volumePanel.Queue(Action::Left); volumePanel.Pump(); require(rowMode == 2, "left cycles speech backwards");
+        volumePanel.Queue(Action::Down); volumePanel.Pump(); volumePanel.Queue(Action::Confirm); volumePanel.Pump();
+        require(!rowSound && rowSoundSaves == 1 && rowMode == 2, "row sound switch persists independently of speech");
+        volumePanel.Queue(Action::Down); volumePanel.Pump(); volumePanel.Queue(Action::Left); volumePanel.Pump();
+        require(volumes[3] == 75 && previews.back() == std::pair(Kind::RowBrowse, 75), "row volume saves then previews triangle at new gain");
+        panelHost.eventKey = "row_zombie_speech"; panelHost.eventIndex = 0; panelHost.events = {{"click", ""}};
+        controller.Pump(); volumePanel.Pump(); require(rowMode == 0, "mouse cycles row speech mode");
+        volumePanel.Queue(Action::Start); volumePanel.Pump(); volumePanel.RequestOpen(); volumePanel.Pump();
+        require(panelHost.texts["row_zombie_speech"].ends_with("关闭") && panelHost.texts["row_zombie_cue"].starts_with("0\t") &&
+            panelHost.texts["row_zombie_volume"].ends_with("75%"), "reopening preserves all three row settings");
+        volumePanel.Queue(Action::Start); volumePanel.Pump();
 
         wchar_t executable[MAX_PATH]{};
         GetModuleFileNameW(nullptr, executable, MAX_PATH);

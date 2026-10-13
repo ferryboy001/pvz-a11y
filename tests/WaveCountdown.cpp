@@ -27,6 +27,7 @@ struct FakeCountdownBoard {
     uint32_t flags = 0;
     std::string spoken;
     std::vector<std::string> playedSounds;
+    std::vector<double> playedVolumes;
 
     static TaoPluginObjectHandle Handle(uint32_t kind, uint64_t id) {
         TaoPluginObjectHandle h{};
@@ -88,6 +89,7 @@ struct FakeCountdownBoard {
         host.sound.play = [](void* ctx, const TaoPluginAudioPlayDescriptorV1* desc, TaoPluginAudioHandle* out) {
             auto& s = *static_cast<FakeCountdownBoard*>(ctx);
             s.playedSounds.push_back(std::string(desc->resource_id.data, desc->resource_id.size));
+            s.playedVolumes.push_back(desc->volume);
             out->audio_id = s.playedSounds.size();
             return TAO_PLUGIN_OK;
         };
@@ -233,6 +235,15 @@ int main() {
             require(s.playedSounds.empty(), "level complete produces no sound");
         }
 
+        {
+            FakeCountdownBoard s; s.control.SetCueVolumes(80, 35, 60);
+            s.zombieCountdown = 300; s.Update(100);
+            require(s.playedVolumes.size() == 1 && s.playedVolumes[0] == .35, "gameplay countdown uses independent volume");
+            s.control.PreviewCountdownCue(); require(s.playedVolumes.back() == .35, "preview matches gameplay countdown gain");
+            s.control.SetCueVolumes(80, 0, 60); s.zombieCountdown = 200;
+            const auto count = s.playedSounds.size(); s.Update(101);
+            require(s.playedSounds.size() == count, "zero countdown volume mutes gameplay");
+        }
         std::cout << checks << " wave countdown checks passed\n";
         return 0;
     } catch (const std::exception& e) {

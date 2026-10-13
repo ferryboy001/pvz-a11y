@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -131,6 +132,7 @@ public:
             zenProbeValid = false;
             gridProbeValid = false;
             gardenCarried = {};
+            rowBrowsePending = false;
         }
         // 禅境花园实际网格 8x4（ZEN_MAX_GRIDSIZE_X/Y，宿主花园落点枚举的同款
         // 范围），宿主 context 按草坪棋盘上报 9x6；覆写后光标夹紧、格子朗读、
@@ -260,9 +262,11 @@ public:
     void RememberGridRows(int level, int rows) { if (saveGridRows) saveGridRows(level, rows); }
 
     void MoveCursor(int dx, int dy) {
+        const int previousRow = row;
         column += dx;
         row += dy;
-        Context();
+        const auto context = Context();
+        rowBrowsePending = dy != 0 && row != previousRow && Gameplay(context) && !IsZenGarden() && !IsTreeOfWisdom();
         layer = 0;
     }
     void ReadCell() {
@@ -271,6 +275,15 @@ public:
             TaoPluginStringView fallback{};
             if (host->a11y.cell_text(host->a11y.host_context, currentBoard, column, row, &fallback) == TAO_PLUGIN_OK)
                 text = CopyView(fallback);
+        }
+        if (rowBrowsePending) {
+            rowBrowsePending = false;
+            if (rowSpeechMode != 0 || (rowCueOn && rowCueVolume > 0)) {
+                double leftmost = std::numeric_limits<double>::infinity();
+                auto summary = ComposeRowZombies(rowSpeechMode != 2, &leftmost);
+                if (rowSpeechMode != 0) { if (!text.empty()) text += "；"; text += "本行：" + summary; }
+                if (rowCueOn && std::isfinite(leftmost)) PlayRowBrowseCue(row, gridFieldRows, leftmost);
+            }
         }
         if (!text.empty()) Say(std::move(text));
         boardFocus = true;
@@ -451,12 +464,17 @@ public:
     // Shift 单击：按列从左到右播报当前行的僵尸（带状态前缀）与僵王球，
     // 格式：数量；【列号，名称】……（例：2；3，路障僵尸；5，撑杆僵尸）
     void AnnounceRowZombies() {
+        auto text = ComposeRowZombies();
+        Say(text == "没有僵尸" ? "本行没有僵尸" : std::move(text));
+    }
+    std::string ComposeRowZombies(bool countOnly = false, double* leftmost = nullptr) {
         std::string view;
-        if (!objects || !objects->Available() || !ViewName('z', view)) { Say("本行没有僵尸"); return; }
+        if (!objects || !objects->Available() || !ViewName('z', view)) return "无法读取本行僵尸";
         auto boardResult = objects->Wrap<tao::Board>(currentBoard);
-        if (!boardResult) { Say("本行没有僵尸"); return; }
+        if (!boardResult) return "无法读取本行僵尸";
         const tao::Board boardProxy = boardResult.Value();
         std::vector<std::pair<int, std::string>> entries;
+        int count = 0;
         BossBallInfo bossBall;
         ForEachViewObject(view, [&](TaoPluginObjectHandle handle) {
             auto zombie = objects->Wrap<tao::Zombie>(handle);
@@ -469,33 +487,41 @@ public:
             CheckBossBall(z, boardProxy, zombieType, bossBall);
             const auto zRow = z->GetRow();
             const auto posX = z->GetPosX();
+            if (!zRow || zRow.Value() != row) return;
+            ++count;
+            if (leftmost && posX && std::isfinite(posX.Value())) *leftmost = std::min(*leftmost, double(posX.Value()));
+            if (countOnly) return;
             const auto posY = z->GetPosY();
-            if (!zRow || !posX || !posY || zRow.Value() != row) return;
             // 与格子朗读一致：僵尸判定格 = (posX + 75) 换算列
-            const auto zCol = boardProxy->PixelToGridXKeepOnBoard(int(posX.Value() + 75.0f), int(posY.Value()));
-            if (!zCol) return;
-            entries.emplace_back(zCol.Value(),
+            int zombieColumn = INT_MAX;
+            if (posX && posY && std::isfinite(posX.Value()) && std::isfinite(posY.Value())) {
+                const auto zCol = boardProxy->PixelToGridXKeepOnBoard(int(posX.Value() + 75.0f), int(posY.Value()));
+                if (zCol) zombieColumn = zCol.Value();
+            }
+            entries.emplace_back(zombieColumn,
                 ZombieStatusPrefix(z) + ZombieDisplayName(zombieType, zombieShortNames));
         });
         // 僵王球与僵尸同表播报；列位置解析失败时排最后并注明"列不明"。
         std::string unknownBall;
         if (bossBall.active && bossBall.ballRow == row) {
+            ++count;
             const char* ballName = bossBall.isFire ? "僵王火球" : "僵王冰球";
             if (bossBall.ballCol >= 0) entries.emplace_back(bossBall.ballCol, ballName);
             else unknownBall = ballName;
         }
-        if (entries.empty() && unknownBall.empty()) { Say("本行没有僵尸"); return; }
+        if (count == 0) return "没有僵尸";
+        if (countOnly) return std::to_string(count) + " 只僵尸";
         std::sort(entries.begin(), entries.end(),
             [](const auto& a, const auto& b) { return a.first < b.first; });
-        std::string text = std::to_string(entries.size() + (unknownBall.empty() ? 0 : 1));
+        std::string text = std::to_string(count);
         for (const auto& [col, name] : entries) {
             text += "；";
-            text += std::to_string(col + 1);
+            text += col == INT_MAX ? "列不明" : std::to_string(col + 1);
             text += "，";
             text += name;
         }
         if (!unknownBall.empty()) text += "；" + unknownBall + "，列不明";
-        Say(std::move(text));
+        return text;
     }
     // Shift 双击：播报本行小推车，没有则朗读"无"。
     void AnnounceRowMowers() {
@@ -2604,7 +2630,7 @@ private:
             const auto zRow = z->GetRow();
             const auto posX = z->GetPosX();
             const auto posY = z->GetPosY();
-            if (!zRow || !posX || !posY || zRow.Value() != row) return;
+            if (!zRow || !posX || !posY || !std::isfinite(posX.Value()) || !std::isfinite(posY.Value()) || zRow.Value() != row) return;
             // 与 PvZA11y 一致：僵尸判定格 = (posX + 75) 换算列
             const auto zCol = boardProxy->PixelToGridXKeepOnBoard(int(posX.Value() + 75.0f), int(posY.Value()));
             if (!zCol || zCol.Value() != column) return;
@@ -2990,6 +3016,41 @@ private:
 
 public:
     // ===== 僵尸波次 / 快速僵尸提示音（迁移自 PvZA11y：Program.cs 主循环 + Board.cs 扫描）=====
+    void SetRowBrowseOptions(int speechMode, bool cueOn, int volumePercent) {
+        rowSpeechMode = std::clamp(speechMode, 0, 2); rowCueOn = cueOn;
+        rowCueVolume = std::clamp(volumePercent, 0, 100) / 100.0;
+    }
+    void PreviewRowBrowseCue() {
+        StopCuePreview();
+        previewSound = PlayCueSound("SOUND_PVZ_A11Y_ROW_H5_R2", boardTick, 0, rowCueVolume);
+    }
+    void SetCueVolumes(int hammerPercent, int countdownPercent, int entryPercent) {
+        hammerCueVolume = std::clamp(hammerPercent, 0, 100) / 100.0;
+        countdownCueVolume = std::clamp(countdownPercent, 0, 100) / 100.0;
+        entryCueVolume = std::clamp(entryPercent, 0, 100) / 100.0;
+    }
+    // 设置面板和嵌套模态中也回收已播完的实例，无需棋盘或 a11y 订阅。
+    void PumpCueSounds(uint64_t tick) { boardTick = tick; PruneCueSounds(tick); }
+    void StopCuePreview() {
+        if (!previewSound.audio_id) return;
+        if (host->sound.destroy) host->sound.destroy(host->sound.host_context, previewSound);
+        activeCueSounds.erase(std::remove_if(activeCueSounds.begin(), activeCueSounds.end(), [&](const ActiveCue& cue) {
+            return cue.sound.audio_id == previewSound.audio_id && cue.sound.generation == previewSound.generation;
+        }), activeCueSounds.end());
+        previewSound = {};
+    }
+    void PreviewHammerCue() {
+        StopCuePreview();
+        previewSound = PlayCueSound("SOUND_PVZ_A11Y_HAMMER_H5_R2", boardTick, 0, hammerCueVolume);
+    }
+    void PreviewCountdownCue() {
+        StopCuePreview();
+        previewSound = PlayCueSound("SOUND_PVZ_A11Y_COUNTDOWN_5", boardTick, 0, countdownCueVolume);
+    }
+    void PreviewEntryCue() {
+        StopCuePreview();
+        previewSound = PlayCueSound("SOUND_PVZ_A11Y_ENTRY_H5_R2", boardTick, 0, entryCueVolume);
+    }
     // 入场提示：新出现的僵尸按行播放正弦音，音高 1000 - row*500/行数 逐行递降，
     // 行间间隔 200ms（20 tick）；快速僵尸（撑杆/橄榄球/雪橇小队）总数增加时按
     // 最新个体的行立即播放三连锯齿音。音频为预渲染 wav（tools/GenCues.ps1 生成，
@@ -3134,28 +3195,36 @@ public:
     }
 
 private:
+    static int PositionPan(double x) {
+        return int(std::lround((std::clamp(x / 800.0, 0.0, 1.0) * 2.0 - 1.0) * 10000.0));
+    }
+    void PlayRowBrowseCue(int cueRow, int height, double leftmost) {
+        char id[48];
+        std::snprintf(id, sizeof id, "SOUND_PVZ_A11Y_ROW_H%d_R%d", height, cueRow);
+        PlayCueSound(id, boardTick, PositionPan(leftmost), rowCueVolume);
+    }
     void PlayHammerCue(const tao::Zombie& zombie, int cueRow, int height, uint64_t tick) {
         // Zombie::pos_x 是棋盘局部逻辑坐标，不受窗口缩放影响；本版棋盘宽 800。
         // 居中音源按宿主声像范围 -10000（左）..10000（右）定位。
         int pan = 0;
         if (const auto pos = zombie->GetPosX(); pos && std::isfinite(pos.Value()))
-            pan = int(std::lround((std::clamp(double(pos.Value()) / 800.0, 0.0, 1.0) * 2.0 - 1.0) * 10000.0));
+            pan = PositionPan(pos.Value());
         else if (const auto x = zombie->GetX())
-            pan = int(std::lround((std::clamp(double(x.Value()) / 800.0, 0.0, 1.0) * 2.0 - 1.0) * 10000.0));
+            pan = PositionPan(x.Value());
         char id[48];
         std::snprintf(id, sizeof id, "SOUND_PVZ_A11Y_HAMMER_H%d_R%d", height, cueRow);
-        PlayCueSound(id, tick, pan);
+        PlayCueSound(id, tick, pan, hammerCueVolume);
     }
     void PlayRowCue(int cueRow, int height, bool fast, uint64_t tick) {
         char id[48];
         std::snprintf(id, sizeof id, "SOUND_PVZ_A11Y_%s_H%d_R%d", fast ? "FAST" : "ENTRY", height, cueRow);
-        PlayCueSound(id, tick);
+        PlayCueSound(id, tick, 0, fast ? 1.0 : entryCueVolume);
     }
     void PlayCountdownCue(int secondIndex, uint64_t tick) {
         if (secondIndex < 1 || secondIndex > 15) return;
         char id[48];
         std::snprintf(id, sizeof id, "SOUND_PVZ_A11Y_COUNTDOWN_%d", secondIndex);
-        PlayCueSound(id, tick);
+        PlayCueSound(id, tick, 0, countdownCueVolume);
     }
     void UpdateWaveCountdown(const TaoPluginAccessibilityContextV1& context, uint64_t tick,
                              bool countdownOn, int countdownSeconds) {
@@ -3223,25 +3292,26 @@ private:
         }
         waveCountdownPrevCd = cd;
     }
-    void PlayCueSound(const char* id, uint64_t tick, int pan = 0) {
-        if (!host->sound.play) return;
+    TaoPluginAudioHandle PlayCueSound(const char* id, uint64_t tick, int pan = 0, double volume = 1.0) {
+        if (!host->sound.play || volume <= 0) return {};
         TaoPluginAudioPlayDescriptorV1 descriptor{};
         descriptor.struct_size = sizeof(descriptor);
         descriptor.resource_id = tao::AbiString(id);
-        descriptor.volume = 1.0; // 增益由 tao.audio_group 统一控制
+        descriptor.volume = volume; // 独立音量再叠加 tao.audio_group 的 cues 总增益
         descriptor.pan = pan;
         TaoPluginAudioHandle sound{};
         if (host->sound.play(host->sound.host_context, &descriptor, &sound) != TAO_PLUGIN_OK) {
             if (log && !cuePlayFailed) { cuePlayFailed = true; log(std::string("提示音播放失败：") + id); }
-            return;
+            return {};
         }
         activeCueSounds.push_back({sound, tick});
+        return sound;
     }
     // 一次性实例播完必须 destroy 归还宿主混音通道：只查 is_valid 不够
     // （播完的实例句柄仍可能有效），以 describe 的 PLAYING 标志为准，
     // 超过 3 秒（300 tick，最长提示音 250ms）无条件兜底回收。
     void PruneCueSounds(uint64_t tick) {
-        if (!host->sound.destroy) { activeCueSounds.clear(); return; }
+        if (!host->sound.destroy) { activeCueSounds.clear(); previewSound = {}; return; }
         for (size_t i = activeCueSounds.size(); i > 0;) {
             --i;
             bool finished = tick - activeCueSounds[i].playedTick > 300;
@@ -3253,6 +3323,8 @@ private:
             }
             if (!finished) continue;
             host->sound.destroy(host->sound.host_context, activeCueSounds[i].sound);
+            if (activeCueSounds[i].sound.audio_id == previewSound.audio_id &&
+                activeCueSounds[i].sound.generation == previewSound.generation) previewSound = {};
             activeCueSounds.erase(activeCueSounds.begin() + i);
         }
     }
@@ -3286,6 +3358,11 @@ private:
     std::vector<PendingCue> pendingCues;
     struct ActiveCue { TaoPluginAudioHandle sound; uint64_t playedTick; };
     std::vector<ActiveCue> activeCueSounds;
+    TaoPluginAudioHandle previewSound{};
+    double hammerCueVolume = 1.0, countdownCueVolume = 1.0, entryCueVolume = 1.0;
+    int rowSpeechMode = 1;
+    bool rowCueOn = true, rowBrowsePending = false;
+    double rowCueVolume = 1.0;
     int prevFastCount = 0;
     int cueSeedIndex = -1;
     bool packetWasReady = false;

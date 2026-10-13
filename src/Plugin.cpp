@@ -53,6 +53,7 @@ protected:
             UI(), loggingOptions,
             [this](std::string text) { Say(std::move(text)); },
             [this] {
+                board.StopCuePreview();
                 uiNav.SyncFocus(settingsReturnFocus);
                 uiNav.RediscoverDialog();
                 if (settingsReturnFocus.widget.object_id) uiNav.Focus(settingsReturnFocus, false);
@@ -64,6 +65,51 @@ protected:
                 settings.Data().waveCountdownCue = enabled;
                 if (!settings.Save()) LogInfo("未选择用户档案，设置仅本次有效。");
                 return true;
+            },
+            [this](LoggingPanel::VolumeKind kind) {
+                const auto& data = settings.Data();
+                switch (kind) {
+                case LoggingPanel::VolumeKind::Hammer: return data.gargantuarHammerVolume;
+                case LoggingPanel::VolumeKind::WaveCountdown: return data.waveCountdownVolume;
+                case LoggingPanel::VolumeKind::ZombieEntry: return data.zombieEntryVolume;
+                case LoggingPanel::VolumeKind::RowBrowse: return data.rowZombieVolume;
+                }
+                return 100;
+            },
+            [this](LoggingPanel::VolumeKind kind, int volume) {
+                auto& data = settings.Data();
+                switch (kind) {
+                case LoggingPanel::VolumeKind::Hammer: data.gargantuarHammerVolume = volume; break;
+                case LoggingPanel::VolumeKind::WaveCountdown: data.waveCountdownVolume = volume; break;
+                case LoggingPanel::VolumeKind::ZombieEntry: data.zombieEntryVolume = volume; break;
+                case LoggingPanel::VolumeKind::RowBrowse: data.rowZombieVolume = volume; break;
+                }
+                board.SetCueVolumes(data.gargantuarHammerVolume, data.waveCountdownVolume, data.zombieEntryVolume);
+                board.SetRowBrowseOptions(data.rowZombieSpeechMode, data.rowZombieCue, data.rowZombieVolume);
+                const bool saved = settings.Save();
+                if (!saved) LogInfo("提示音音量未能写入档案，仅本次会话有效。");
+                return saved;
+            },
+            [this](LoggingPanel::VolumeKind kind) {
+                switch (kind) {
+                case LoggingPanel::VolumeKind::Hammer: board.PreviewHammerCue(); break;
+                case LoggingPanel::VolumeKind::WaveCountdown: board.PreviewCountdownCue(); break;
+                case LoggingPanel::VolumeKind::ZombieEntry: board.PreviewEntryCue(); break;
+                case LoggingPanel::VolumeKind::RowBrowse: board.PreviewRowBrowseCue(); break;
+                }
+            });
+        loggingPanel.ConnectRowBrowse(
+            [this] { return settings.Data().rowZombieSpeechMode; },
+            [this](int mode) {
+                auto& data = settings.Data(); data.rowZombieSpeechMode = mode;
+                board.SetRowBrowseOptions(data.rowZombieSpeechMode, data.rowZombieCue, data.rowZombieVolume);
+                return settings.Save();
+            },
+            [this] { return settings.Data().rowZombieCue; },
+            [this](bool enabled) {
+                auto& data = settings.Data(); data.rowZombieCue = enabled;
+                board.SetRowBrowseOptions(data.rowZombieSpeechMode, data.rowZombieCue, data.rowZombieVolume);
+                return settings.Save();
             });
         // CRT 崩溃前置钩子（terminate/无效参数/SIGABRT → mods/abort.log 调用栈）：
         // c0000409/5 类 abort 崩溃（如"重新开始游戏"）只能靠它定位，进程内异常
@@ -87,6 +133,12 @@ protected:
                 if (auto v = p.Get<bool>("zombie_entry_cue", data.zombieEntryCue)) data.zombieEntryCue = v.Value();
                 if (auto v = p.Get<bool>("fast_zombie_cue", data.fastZombieCue)) data.fastZombieCue = v.Value();
                 if (auto v = p.Get<bool>("gargantuar_hammer_cue", data.gargantuarHammerCue)) data.gargantuarHammerCue = v.Value();
+                if (auto v = p.Get<int>("gargantuar_hammer_volume", data.gargantuarHammerVolume)) data.gargantuarHammerVolume = std::clamp(v.Value(), 0, 100);
+                if (auto v = p.Get<int>("wave_countdown_volume", data.waveCountdownVolume)) data.waveCountdownVolume = std::clamp(v.Value(), 0, 100);
+                if (auto v = p.Get<int>("zombie_entry_volume", data.zombieEntryVolume)) data.zombieEntryVolume = std::clamp(v.Value(), 0, 100);
+                if (auto v = p.Get<int>("row_zombie_speech", data.rowZombieSpeechMode)) data.rowZombieSpeechMode = std::clamp(v.Value(), 0, 2);
+                if (auto v = p.Get<bool>("row_zombie_cue", data.rowZombieCue)) data.rowZombieCue = v.Value();
+                if (auto v = p.Get<int>("row_zombie_volume", data.rowZombieVolume)) data.rowZombieVolume = std::clamp(v.Value(), 0, 100);
                 if (auto v = p.Get<bool>("plant_ready_cue", data.plantReadyCue)) data.plantReadyCue = v.Value();
                 if (auto v = p.Get<bool>("wave_countdown_cue", data.waveCountdownCue)) data.waveCountdownCue = v.Value();
                 if (auto v = p.Get<int>("wave_countdown_seconds", data.waveCountdownSeconds)) data.waveCountdownSeconds = std::clamp(v.Value(), 1, 15);
@@ -110,6 +162,12 @@ protected:
                     tao::state::Mutation::Set("zombie_entry_cue", data.zombieEntryCue),
                     tao::state::Mutation::Set("fast_zombie_cue", data.fastZombieCue),
                     tao::state::Mutation::Set("gargantuar_hammer_cue", data.gargantuarHammerCue),
+                    tao::state::Mutation::Set("gargantuar_hammer_volume", int64_t(data.gargantuarHammerVolume)),
+                    tao::state::Mutation::Set("wave_countdown_volume", int64_t(data.waveCountdownVolume)),
+                    tao::state::Mutation::Set("zombie_entry_volume", int64_t(data.zombieEntryVolume)),
+                    tao::state::Mutation::Set("row_zombie_speech", int64_t(data.rowZombieSpeechMode)),
+                    tao::state::Mutation::Set("row_zombie_cue", data.rowZombieCue),
+                    tao::state::Mutation::Set("row_zombie_volume", int64_t(data.rowZombieVolume)),
                     tao::state::Mutation::Set("plant_ready_cue", data.plantReadyCue),
                     tao::state::Mutation::Set("wave_countdown_cue", data.waveCountdownCue),
                     tao::state::Mutation::Set("wave_countdown_seconds", int64_t(data.waveCountdownSeconds))});
@@ -364,6 +422,7 @@ protected:
         return TAO_PLUGIN_OK;
     }
     void OnUpdate(uint64_t tick) override {
+        board.PumpCueSounds(tick);
         // 普通帧及阻塞型 Mod 管理器的嵌套帧都可操作设置。
         try { loggingPanel.Pump(); }
         catch (const std::exception& error) { Say(std::string("设置界面操作失败：") + error.what()); }
@@ -694,6 +753,8 @@ private:
     }
     void ApplySettings() {
         const auto& data = settings.Data();
+        board.SetCueVolumes(data.gargantuarHammerVolume, data.waveCountdownVolume, data.zombieEntryVolume);
+        board.SetRowBrowseOptions(data.rowZombieSpeechMode, data.rowZombieCue, data.rowZombieVolume);
         speech.Settings(data.volume, data.rate);
         services.audio.set_volume(services.audio.host_context, data.cues);
         // 持久化的商店入口按钮位置（动态学习成果）：w>0 才覆盖，避免空设置
