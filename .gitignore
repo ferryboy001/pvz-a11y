@@ -1,0 +1,13 @@
+# Local Prism binaries and headers are supplied separately.
+/prism-bin/
+
+# CMake and Visual Studio outputs.
+/build/
+/cmake-build-*/
+/.vs/
+CMakeFiles/
+CMakeCache.txt
+*.obj
+*.pdb
+*.user
+*.suo
