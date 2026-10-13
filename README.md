@@ -36,6 +36,10 @@
   （PvZA11y 原为改写僵尸 age 字段做标记）。
 - 快速僵尸（撑杆/橄榄球/雪橇小队）：场上总数增加时按最新个体所在行播放
   三连锯齿提示音（50ms x 3，同音高公式），仅右声道。
+- 巨人/红眼巨人举锤：每次进入 `PHASE_GARGANTUAR_SMASHING` 时按所在行播放
+  双声锯齿音（50ms x 2，间隔 50ms，同音高公式）。声像按各巨人的 `pos_x`
+  在 800px 逻辑棋盘上的位置设置（左/中/右），不受窗口缩放影响。持续举锤不重播，
+  投掷小鬼不触发；同行多个巨人也分别定位。阶段读取失败保留检测状态。
 - 当前选中卡片就绪：冷却结束且阳光充足时播放上升琶音（698.46/880/1046.5 Hz
   正弦叠加，双声道，对齐 PvZA11y 的 `PlantReadyCueVolume`）；手动换槽
   （数字键/循环键）不触发，只在卡片选中期间自动就绪（冷却跑完/阳光攒够）
@@ -47,11 +51,13 @@
   实时追踪 `zombie_countdown`，当快速击杀僵尸导致刷新倒计时突降、或波次重置时均能即刻反应。
 - 实现：`BoardControl::UpdateCues`（100ms 节流扫描 zombies 视图，波次倒计时每 tick
   精准更新）+ `tao.audio` 播放预渲染 wav。wav 由 `tools/GenCues.ps1` 生成，
-  `resources.xml` 声明为 `SOUND_PVZ_A11Y_ENTRY/FAST_H{行数}_R{行号}`、
+  `resources.xml` 声明为 `SOUND_PVZ_A11Y_ENTRY/FAST/HAMMER_H{行数}_R{行号}`、
   就绪琶音为 `SOUND_PVZ_A11Y_READY`、倒计时音为 `SOUND_PVZ_A11Y_COUNTDOWN_{1..15}`；
   音量走 `tao.audio_group` 的提示音增益（`cues` 设置）。开关与参数：档案设置
-  `zombie_entry_cue` / `fast_zombie_cue` / `plant_ready_cue` / `wave_countdown_cue`（默认开）
+  `zombie_entry_cue` / `fast_zombie_cue` / `gargantuar_hammer_cue` / `plant_ready_cue` / `wave_countdown_cue`（默认开）
   以及 `wave_countdown_seconds`（默认 5）。
+  `tests/GargantuarCues.cpp` 覆盖两种巨人、举锤去重/再次攻击、左右声像、五/六行音高资源、
+  对象槽复用、阶段读取失败、开关与换棋盘；音高使用场地高度和绝对行号。
 
 ## 玉米炮与 mod 植物适配
 

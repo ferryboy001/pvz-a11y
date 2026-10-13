@@ -3,26 +3,37 @@
     <Resources id="Init">
         <Sound id="SOUND_PVZ_A11Y_ENTRY_H5_R0" path="sounds/entry_h5_r0" />
         <Sound id="SOUND_PVZ_A11Y_FAST_H5_R0" path="sounds/fast_h5_r0" />
+        <Sound id="SOUND_PVZ_A11Y_HAMMER_H5_R0" path="sounds/hammer_h5_r0" />
         <Sound id="SOUND_PVZ_A11Y_ENTRY_H5_R1" path="sounds/entry_h5_r1" />
         <Sound id="SOUND_PVZ_A11Y_FAST_H5_R1" path="sounds/fast_h5_r1" />
+        <Sound id="SOUND_PVZ_A11Y_HAMMER_H5_R1" path="sounds/hammer_h5_r1" />
         <Sound id="SOUND_PVZ_A11Y_ENTRY_H5_R2" path="sounds/entry_h5_r2" />
         <Sound id="SOUND_PVZ_A11Y_FAST_H5_R2" path="sounds/fast_h5_r2" />
+        <Sound id="SOUND_PVZ_A11Y_HAMMER_H5_R2" path="sounds/hammer_h5_r2" />
         <Sound id="SOUND_PVZ_A11Y_ENTRY_H5_R3" path="sounds/entry_h5_r3" />
         <Sound id="SOUND_PVZ_A11Y_FAST_H5_R3" path="sounds/fast_h5_r3" />
+        <Sound id="SOUND_PVZ_A11Y_HAMMER_H5_R3" path="sounds/hammer_h5_r3" />
         <Sound id="SOUND_PVZ_A11Y_ENTRY_H5_R4" path="sounds/entry_h5_r4" />
         <Sound id="SOUND_PVZ_A11Y_FAST_H5_R4" path="sounds/fast_h5_r4" />
+        <Sound id="SOUND_PVZ_A11Y_HAMMER_H5_R4" path="sounds/hammer_h5_r4" />
         <Sound id="SOUND_PVZ_A11Y_ENTRY_H6_R0" path="sounds/entry_h6_r0" />
         <Sound id="SOUND_PVZ_A11Y_FAST_H6_R0" path="sounds/fast_h6_r0" />
+        <Sound id="SOUND_PVZ_A11Y_HAMMER_H6_R0" path="sounds/hammer_h6_r0" />
         <Sound id="SOUND_PVZ_A11Y_ENTRY_H6_R1" path="sounds/entry_h6_r1" />
         <Sound id="SOUND_PVZ_A11Y_FAST_H6_R1" path="sounds/fast_h6_r1" />
+        <Sound id="SOUND_PVZ_A11Y_HAMMER_H6_R1" path="sounds/hammer_h6_r1" />
         <Sound id="SOUND_PVZ_A11Y_ENTRY_H6_R2" path="sounds/entry_h6_r2" />
         <Sound id="SOUND_PVZ_A11Y_FAST_H6_R2" path="sounds/fast_h6_r2" />
+        <Sound id="SOUND_PVZ_A11Y_HAMMER_H6_R2" path="sounds/hammer_h6_r2" />
         <Sound id="SOUND_PVZ_A11Y_ENTRY_H6_R3" path="sounds/entry_h6_r3" />
         <Sound id="SOUND_PVZ_A11Y_FAST_H6_R3" path="sounds/fast_h6_r3" />
+        <Sound id="SOUND_PVZ_A11Y_HAMMER_H6_R3" path="sounds/hammer_h6_r3" />
         <Sound id="SOUND_PVZ_A11Y_ENTRY_H6_R4" path="sounds/entry_h6_r4" />
         <Sound id="SOUND_PVZ_A11Y_FAST_H6_R4" path="sounds/fast_h6_r4" />
+        <Sound id="SOUND_PVZ_A11Y_HAMMER_H6_R4" path="sounds/hammer_h6_r4" />
         <Sound id="SOUND_PVZ_A11Y_ENTRY_H6_R5" path="sounds/entry_h6_r5" />
         <Sound id="SOUND_PVZ_A11Y_FAST_H6_R5" path="sounds/fast_h6_r5" />
+        <Sound id="SOUND_PVZ_A11Y_HAMMER_H6_R5" path="sounds/hammer_h6_r5" />
         <Sound id="SOUND_PVZ_A11Y_READY" path="sounds/ready" />
         <Sound id="SOUND_PVZ_A11Y_COUNTDOWN_1" path="sounds/countdown_1" />
         <Sound id="SOUND_PVZ_A11Y_COUNTDOWN_2" path="sounds/countdown_2" />

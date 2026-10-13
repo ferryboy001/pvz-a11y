@@ -11,6 +11,7 @@ struct SettingsData {
     double cues = 1.0;
     bool zombieEntryCue = true;  // 每波僵尸入场按行递降音高提示
     bool fastZombieCue = true;   // 撑杆/橄榄球/雪橇小队出现三连音提示
+    bool gargantuarHammerCue = true; // 巨人/红眼巨人每次举锤时按行播放双声锯齿音
     bool plantReadyCue = true;   // 当前选中卡片冷却完成且阳光充足时琶音提示
     bool waveCountdownCue = true; // 下一波僵尸刷新倒计时方波提示
     int waveCountdownSeconds = 5; // 刷新前提醒倒计时秒数（默认 5 秒）

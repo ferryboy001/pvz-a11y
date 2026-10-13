@@ -3006,7 +3006,7 @@ public:
         waveCountdownPrevCd = -1;
     }
     void UpdateCues(const TaoPluginAccessibilityContextV1& context, uint64_t tick, bool entryOn, bool fastOn, bool readyOn,
-                    bool waveCountdownOn = true, int waveCountdownSeconds = 5) {
+                    bool waveCountdownOn = true, int waveCountdownSeconds = 5, bool hammerOn = true) {
         lastCueTick = tick;
         PruneCueSounds(tick);
         UpdateWaveCountdown(context, tick, waveCountdownOn, waveCountdownSeconds);
@@ -3038,14 +3038,29 @@ public:
             // 自己记录见过的个体（对象槽复用时 generation 变化，混合进键）；
             // 首次见到且足够"年轻"才算新入场，避免 mod 中途启用时把全场当新波次。
             const uint64_t key = handle.object_id ^ (handle.generation * UINT64_C(0x9E3779B97F4A7C15));
-            const auto [it, fresh] = seenZombies.emplace(key, tick);
-            it->second = tick;
+            const auto [it, fresh] = seenZombies.emplace(key, SeenZombie{tick, false});
+            it->second.lastSeenTick = tick;
             if (fresh && entryOn && age.Value() >= 0 && age.Value() < 80 &&
                 zRow.Value() >= 0 && zRow.Value() < height)
                 entered[zRow.Value()] = true;
             const auto type = z->GetZombieType();
             if (!type) return;
             const int value = int(type.Value().Value());
+            if (value == int(tao::enums::ZombieType::ZOMBIE_GARGANTUAR.Value()) ||
+                value == int(tao::enums::ZombieType::ZOMBIE_REDEYE_GARGANTUAR.Value())) {
+                // 每个个体只在进入举锤阶段时提示；投掷小鬼不触发。
+                // 行号决定音高，横向位置决定声像，分别保留每个巨人的位置。
+                // 阶段读取失败保留原状态，避免瞬时失败导致同次举锤重播。
+                const auto phase = z->GetPhase();
+                if (phase) {
+                    const bool smashing = int(phase.Value().Value()) ==
+                        int(tao::enums::ZombiePhase::PHASE_GARGANTUAR_SMASHING.Value());
+                    if (hammerOn && smashing && !it->second.smashing &&
+                        zRow.Value() >= 0 && zRow.Value() < height)
+                        PlayHammerCue(z, zRow.Value(), height, tick);
+                    it->second.smashing = smashing;
+                }
+            } else it->second.smashing = false;
             if (value == int(tao::enums::ZombieType::ZOMBIE_POLEVAULTER.Value()) ||
                 value == int(tao::enums::ZombieType::ZOMBIE_FOOTBALL.Value()) ||
                 value == int(tao::enums::ZombieType::ZOMBIE_BOBSLED.Value())) {
@@ -3056,7 +3071,7 @@ public:
         // 清理离场已久的记录，表不会无限增长
         if (tick % 500 == 5) {
             for (auto it = seenZombies.begin(); it != seenZombies.end();) {
-                if (tick - it->second > 3000) it = seenZombies.erase(it);
+                if (tick - it->second.lastSeenTick > 3000) it = seenZombies.erase(it);
                 else ++it;
             }
         }
@@ -3119,6 +3134,18 @@ public:
     }
 
 private:
+    void PlayHammerCue(const tao::Zombie& zombie, int cueRow, int height, uint64_t tick) {
+        // Zombie::pos_x 是棋盘局部逻辑坐标，不受窗口缩放影响；本版棋盘宽 800。
+        // 居中音源按宿主声像范围 -10000（左）..10000（右）定位。
+        int pan = 0;
+        if (const auto pos = zombie->GetPosX(); pos && std::isfinite(pos.Value()))
+            pan = int(std::lround((std::clamp(double(pos.Value()) / 800.0, 0.0, 1.0) * 2.0 - 1.0) * 10000.0));
+        else if (const auto x = zombie->GetX())
+            pan = int(std::lround((std::clamp(double(x.Value()) / 800.0, 0.0, 1.0) * 2.0 - 1.0) * 10000.0));
+        char id[48];
+        std::snprintf(id, sizeof id, "SOUND_PVZ_A11Y_HAMMER_H%d_R%d", height, cueRow);
+        PlayCueSound(id, tick, pan);
+    }
     void PlayRowCue(int cueRow, int height, bool fast, uint64_t tick) {
         char id[48];
         std::snprintf(id, sizeof id, "SOUND_PVZ_A11Y_%s_H%d_R%d", fast ? "FAST" : "ENTRY", height, cueRow);
@@ -3196,12 +3223,13 @@ private:
         }
         waveCountdownPrevCd = cd;
     }
-    void PlayCueSound(const char* id, uint64_t tick) {
+    void PlayCueSound(const char* id, uint64_t tick, int pan = 0) {
         if (!host->sound.play) return;
         TaoPluginAudioPlayDescriptorV1 descriptor{};
         descriptor.struct_size = sizeof(descriptor);
         descriptor.resource_id = tao::AbiString(id);
         descriptor.volume = 1.0; // 增益由 tao.audio_group 统一控制
+        descriptor.pan = pan;
         TaoPluginAudioHandle sound{};
         if (host->sound.play(host->sound.host_context, &descriptor, &sound) != TAO_PLUGIN_OK) {
             if (log && !cuePlayFailed) { cuePlayFailed = true; log(std::string("提示音播放失败：") + id); }
@@ -3252,7 +3280,8 @@ private:
     int column = 0, row = 0, seedIndex = 0;
     // 提示音检测状态
     TaoPluginObjectHandle cueBoard{};
-    std::unordered_map<uint64_t, uint64_t> seenZombies; // 混合键 -> 最后见到 tick
+    struct SeenZombie { uint64_t lastSeenTick; bool smashing; };
+    std::unordered_map<uint64_t, SeenZombie> seenZombies; // 混合键 -> 最近观察状态
     struct PendingCue { uint64_t dueTick; int row; bool fast; };
     std::vector<PendingCue> pendingCues;
     struct ActiveCue { TaoPluginAudioHandle sound; uint64_t playedTick; };

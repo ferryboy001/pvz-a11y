@@ -86,6 +86,7 @@ protected:
                 if (auto v = p.Get<double>("cues", data.cues)) data.cues = std::clamp(v.Value(), 0.0, 1.0);
                 if (auto v = p.Get<bool>("zombie_entry_cue", data.zombieEntryCue)) data.zombieEntryCue = v.Value();
                 if (auto v = p.Get<bool>("fast_zombie_cue", data.fastZombieCue)) data.fastZombieCue = v.Value();
+                if (auto v = p.Get<bool>("gargantuar_hammer_cue", data.gargantuarHammerCue)) data.gargantuarHammerCue = v.Value();
                 if (auto v = p.Get<bool>("plant_ready_cue", data.plantReadyCue)) data.plantReadyCue = v.Value();
                 if (auto v = p.Get<bool>("wave_countdown_cue", data.waveCountdownCue)) data.waveCountdownCue = v.Value();
                 if (auto v = p.Get<int>("wave_countdown_seconds", data.waveCountdownSeconds)) data.waveCountdownSeconds = std::clamp(v.Value(), 1, 15);
@@ -108,6 +109,7 @@ protected:
                     tao::state::Mutation::Set("cues", data.cues),
                     tao::state::Mutation::Set("zombie_entry_cue", data.zombieEntryCue),
                     tao::state::Mutation::Set("fast_zombie_cue", data.fastZombieCue),
+                    tao::state::Mutation::Set("gargantuar_hammer_cue", data.gargantuarHammerCue),
                     tao::state::Mutation::Set("plant_ready_cue", data.plantReadyCue),
                     tao::state::Mutation::Set("wave_countdown_cue", data.waveCountdownCue),
                     tao::state::Mutation::Set("wave_countdown_seconds", int64_t(data.waveCountdownSeconds))});
@@ -637,11 +639,11 @@ protected:
         const auto& cueData = settings.Data();
         Mark(tick, "UA"); // 临时诊断：提示音更新之前
         if (Enabled() && cueData.cues > 0 &&
-            (cueData.zombieEntryCue || cueData.fastZombieCue || cueData.plantReadyCue || cueData.waveCountdownCue)) {
+            (cueData.zombieEntryCue || cueData.fastZombieCue || cueData.gargantuarHammerCue || cueData.plantReadyCue || cueData.waveCountdownCue)) {
             const auto context = board.Context();
             if (board.Gameplay(context))
                 board.UpdateCues(context, tick, cueData.zombieEntryCue, cueData.fastZombieCue, cueData.plantReadyCue,
-                                cueData.waveCountdownCue, cueData.waveCountdownSeconds);
+                                cueData.waveCountdownCue, cueData.waveCountdownSeconds, cueData.gargantuarHammerCue);
             else board.ResetCues();
         } else board.ResetCues();
         Mark(tick, "UB"); // 临时诊断：提示音更新之后

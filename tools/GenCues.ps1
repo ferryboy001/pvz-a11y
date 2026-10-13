@@ -1,7 +1,9 @@
 # 生成 pvz-a11y 僵尸提示音（对齐 PvZA11y 的 NAudio 音调参数）：
 # - 入场提示：正弦 100ms，freq = 1000 - row*500/height，右声道；
 # - 快速僵尸：锯齿 3x50ms（0/100/200ms 起始），同一频率，右声道。
-# 输出 22050Hz 16bit 立体声 PCM wav，左右声像直接烘焙（左声道静音）。
+# - 巨人举锤：锯齿 2x50ms（0/100ms 起始），同一行频率，双声道居中音源。
+# 输出 22050Hz 16bit 立体声 PCM wav；入场/快速僵尸左声道静音，
+# 举锤音由播放时的 pan 按巨人横向位置定位。
 param([string]$OutDir = "$PSScriptRoot\..\sounds")
 
 $rate = 22050
@@ -10,8 +12,8 @@ $fadeMs = 3.0
 
 function Write-CueWav([string]$Path, [double]$Freq, [string]$Kind) {
     $beepMs = if ($Kind -eq "entry") { 100.0 } else { 50.0 }
-    $totalMs = if ($Kind -eq "entry") { 100.0 } else { 250.0 }
-    $starts = if ($Kind -eq "entry") { @(0.0) } else { @(0.0, 100.0, 200.0) }
+    $totalMs = if ($Kind -eq "entry") { 100.0 } elseif ($Kind -eq "hammer") { 150.0 } else { 250.0 }
+    $starts = if ($Kind -eq "entry") { @(0.0) } elseif ($Kind -eq "hammer") { @(0.0, 100.0) } else { @(0.0, 100.0, 200.0) }
     $total = [int]($rate * $totalMs / 1000)
     $samples = New-Object 'double[]' $total
     $fade = [int]($rate * $fadeMs / 1000)
@@ -44,7 +46,8 @@ function Write-CueWav([string]$Path, [double]$Freq, [string]$Kind) {
     $bw.Write([int]$dataSize)
     foreach ($s in $samples) {
         $v = [int16]([Math]::Max(-1.0, [Math]::Min(1.0, $s)) * 32767)
-        $bw.Write([int16]0); $bw.Write($v)  # 左声道静音，右声道发声
+        if ($Kind -eq "hammer") { $bw.Write($v) } else { $bw.Write([int16]0) }
+        $bw.Write($v)
     }
     $bw.Close(); $fs.Close()
 }
@@ -54,6 +57,7 @@ foreach ($height in @(5, 6)) {
         $freq = 1000.0 - ($row * 500.0 / $height)
         Write-CueWav (Join-Path $OutDir ("entry_h{0}_r{1}.wav" -f $height, $row)) $freq "entry"
         Write-CueWav (Join-Path $OutDir ("fast_h{0}_r{1}.wav" -f $height, $row)) $freq "fast"
+        Write-CueWav (Join-Path $OutDir ("hammer_h{0}_r{1}.wav" -f $height, $row)) $freq "hammer"
     }
 }
 
