@@ -166,9 +166,10 @@ F12 控件树）。关闭日志不影响实际语音与辅助功能，不删除�
 `UiNavigation::RediscoverDialog` 在停订期间恢复当前顶层弹窗锚点与可用焦点，嵌套帧支持
 方向键、Tab / Shift+Tab，避免进入 Mod 管理器后仍困在被遮挡的“额外设置”子树。
 
-优先使用 [prism](https://github.com/ethindp/prism)（自动协商 NVDA / JAWS / SAPI 等读屏，
+优先使用 prism（自动协商 NVDA / JAWS / SAPI 等读屏，
 对应 PvZA11y 的 Tolk 通道）；`prism.dll` / `tolk.dll` 随 `native/windows_x64/` 一起部署，
 运行时按插件自身路径加载。prism 缺失时回退到 Windows SAPI，两者皆无则只写日志。
+Prism 项目仓库：<https://github.com/ethindp/prism>。
 预置路径由 CMake 缓存变量 `PRISM_ROOT` 指定（默认源码树内 `prism-bin/windows-x64`）。
 仓库不包含 `prism-bin/`；如需 prism 后端，请自行将预编译包放到上述路径，
 或在配置时指定 `PRISM_ROOT`。没有该依赖时会构建仅使用 SAPI 的版本。
